@@ -10,9 +10,11 @@ name: Deploy to GitHub Pages
 #   standalone 是平台官方的「脱离平台可访问」构建目标：跳过上述注入，并把 BrowserRouter
 #   换成 HashRouter（静态托管无需 404.html 回退，任意子路径可直接深链访问）。
 #
-# 为什么要 ASSETS_CDN_PATH：
-#   Pages 站点托管在子路径 /<repo>/ 下，Vite 的 base 需为 /media-preprocess-toolkit，
-#   否则 index.html 里引用的 /assets/*.js 会请求站点根目录而 404。
+# 为什么用 --base=./（相对路径资源）：
+#   相对 base 让同一份产物既能跑在 https://<user>.github.io/<repo>/ 子路径，也能跑在
+#   自定义域名根路径 —— index.html 里引用的是 ./assets/*.js、./favicon.svg，按文档 URL
+#   相对解析。配合 standalone 的 HashRouter（路由在 # 之后、不改 pathname），深链下相对
+#   路径依然正确。若写死绝对前缀（/media-preprocess-toolkit），绑定自定义域名后会全量 404。
 
 on:
   push:
@@ -53,12 +55,11 @@ jobs:
         env:
           NODE_ENV: production
           MIAODA_BUILD_TARGET: standalone
-          ASSETS_CDN_PATH: /media-preprocess-toolkit
-        run: npx vite build --outDir dist --emptyOutDir
+        run: npx vite build --outDir dist --emptyOutDir --base=./
 
       # 注：这里不挂 actions/configure-pages —— 本工作流不消费它输出的 base_url/base_path
-      # （资源前缀由 ASSETS_CDN_PATH 显式指定）。而它的 enablement: true 在 GITHUB_TOKEN 下
-      # 必然失败：action.yml 明确 "This option requires a token other than GITHUB_TOKEN"，
+      # （资源前缀用相对路径 --base=./）。而它的 enablement: true 在 GITHUB_TOKEN 下必然
+      # 失败：action.yml 明确 "This option requires a token other than GITHUB_TOKEN"，
       # 创建 Pages 站点需要 PAT 的 repo 权限或 GitHub App 的 administration:write。
       # 因此 Pages 站点的启用改为一次性人工操作，见 DEPLOYMENT.md「首次部署前置条件」。
 

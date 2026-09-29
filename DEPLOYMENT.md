@@ -298,15 +298,14 @@ GitHub Pages 上没有这层运行时，因此工作流改用平台官方的**�
 ```bash
 NODE_ENV=production \
 MIAODA_BUILD_TARGET=standalone \
-ASSETS_CDN_PATH=/media-preprocess-toolkit \
-npx vite build --outDir dist --emptyOutDir
+npx vite build --outDir dist --emptyOutDir --base=./
 ```
 
-| 环境变量 | 作用 |
+| 参数 | 作用 |
 |---|---|
 | `NODE_ENV=production` | 必须显式设置，preset 以它判断 dev/prod（未设置会按 dev 模式构建，产物不可用） |
 | `MIAODA_BUILD_TARGET=standalone` | 离线产物：跳过占位符注入 / slardar / viewContext / 老浏览器 polyfill / 水印；产物改为 iife 经典脚本；并把 `BrowserRouter` 自动替换为 `HashRouter` |
-| `ASSETS_CDN_PATH=/media-preprocess-toolkit` | 资源前缀 = 仓库子路径。Vite `base` 取此值，否则 `index.html` 引用的 `/assets/*.js` 会请求站点根目录而 404 |
+| `--base=./` | 资源引用改为相对路径（`./assets/*.js`、`./favicon.svg`），使**同一份产物**在 `https://<user>.github.io/<repo>/` 子路径与自定义域名根路径下都能加载。若写死绝对前缀，绑定自定义域名后会全量 404 |
 
 > **HashRouter 的收益**：路由地址形如 `https://shinelixin.github.io/media-preprocess-toolkit/#/annotation`，静态托管无需 404 回退配置，直接打开/刷新任意子路径都能正常渲染。
 
@@ -318,14 +317,32 @@ npx vite build --outDir dist --emptyOutDir
 
 未启用时的现象：工作流在 **deploy** 作业失败（`Deployment failed` / `Pages site not found`）；启用后重新运行工作流即可，例如在 Actions 页面点 **Re-run all jobs**，或再推送一次提交。
 
+### 自定义域名（可选，非必须）
+
+默认访问地址是 `https://shinelixin.github.io/media-preprocess-toolkit/`，**无需任何额外配置**。若要绑定自有域名：
+
+1. 需有一个**真实存在的域名**（必须有顶级后缀，如 `.com` / `.cn` / `.dev`）
+2. 仓库 Settings → Pages → Custom domain 填入该域名
+3. 在域名服务商处添加 DNS 记录：`CNAME` → `shinelixin.github.io`
+4. 等 DNS 生效后勾选 **Enforce HTTPS**
+
+> ⚠️ **注意仓库当前 `CNAME` 文件内容是 `shinelee.mediatoolkit`，缺少顶级域名，不是有效域名。** 存在该配置时，访问 `*.github.io` 会被 301 重定向到这个无法解析的域名，站点会打不开。二选一处理：
+> - **不用自定义域名** → Settings → Pages → Custom domain 清空，并删除仓库根目录的 `CNAME` 文件
+> - **要用自定义域名** → 改成真实域名（例如 `shinelee.mediatoolkit.com`）并按要求配置 DNS
+
+> 由于构建使用相对路径 `--base=./`，无论走 github.io 子路径还是自有域名根路径，同一份产物都能正常加载资源，无需为此改构建配置。
+
 ### 本地复现 Pages 构建
 
 ```bash
-NODE_ENV=production MIAODA_BUILD_TARGET=standalone ASSETS_CDN_PATH=/media-preprocess-toolkit \
-  npx vite build --outDir dist --emptyOutDir
+NODE_ENV=production MIAODA_BUILD_TARGET=standalone \
+  npx vite build --outDir dist --emptyOutDir --base=./
 npx vite preview --outDir dist
-# 访问 http://localhost:4173/media-preprocess-toolkit/
+# 访问 http://localhost:4173/
 ```
+
+> 验证「子路径 / 自定义域名根路径」两种托管方式都可用：把 `dist/` 分别放到
+> `静态根/media-preprocess-toolkit/` 与 `静态根/` 下各起一个静态服务，两处首页与 `#/annotation` 深链都应正常。
 
 > 生产环境完整文档要求 Node.js ≥ 20.19（本机若为 Node 18 会报 `styleText` 不存在）；CI 使用 Node 22。
 
@@ -345,7 +362,8 @@ npx vite preview --outDir dist
 | 大视频 / 大批量图片卡顿 | CPU 密集型操作（纯本地处理） | 分批处理，建议单批 ≤200 张图、视频 ≤500MB |
 | 构建警告 `chunks are larger than 500 kB` | 主包体积大（echarts / tesseract） | 正常提示，不影响运行；后续可做路由级代码分割优化 |
 | GitHub Pages 页面标题显示字面量 `{{appName}}` | 用了平台产物（`npm run build`）而非离线产物 | 用 `MIAODA_BUILD_TARGET=standalone` 构建（工作流已内置） |
-| GitHub Pages 打开后白屏、控制台 `/assets/*.js` 404 | 资源前缀不对（站点在 `/<repo>/` 子路径下） | 构建时设置 `ASSETS_CDN_PATH=/<repo>`，与仓库名一致 |
+| GitHub Pages 打开后白屏、控制台 `/assets/*.js` 404 | 资源前缀与实际托管路径不一致（子路径 / 自定义域名根路径） | 用 `--base=./` 相对路径构建（工作流已内置），两种托管方式通用 |
+| github.io 访问被 301 重定向到打不开的自定义域名 | Settings 里配了无效/未解析的 Custom domain | 清空 Custom domain 与 `CNAME` 文件，或改成真实域名并配好 DNS |
 | GitHub Pages 直接访问 `/#/annotation` 报 404 | 用 BrowserRouter 构建 | 用 standalone 构建（自动切 HashRouter）；自建 Server 则需配 SPA 回退 |
 | 首次工作流失败在「配置 Pages」/ `Create Pages site failed. Resource not accessible by integration` | `GITHUB_TOKEN` 无权创建 Pages 站点 | Settings → Pages → Source 选「GitHub Actions」（工作流已移除该步骤，不再是失败点） |
 | 工作流 deploy 作业失败（`Deployment failed` / Pages site not found） | 仓库尚未启用 Pages | Settings → Pages → Source 选「GitHub Actions」后 **Re-run all jobs** |
