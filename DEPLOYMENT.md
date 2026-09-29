@@ -326,9 +326,7 @@ npx vite build --outDir dist --emptyOutDir --base=./
 3. 在域名服务商处添加 DNS 记录：`CNAME` → `shinelixin.github.io`
 4. 等 DNS 生效后勾选 **Enforce HTTPS**
 
-> ⚠️ **注意仓库当前 `CNAME` 文件内容是 `shinelee.mediatoolkit`，缺少顶级域名，不是有效域名。** 存在该配置时，访问 `*.github.io` 会被 301 重定向到这个无法解析的域名，站点会打不开。二选一处理：
-> - **不用自定义域名** → Settings → Pages → Custom domain 清空，并删除仓库根目录的 `CNAME` 文件
-> - **要用自定义域名** → 改成真实域名（例如 `shinelee.mediatoolkit.com`）并按要求配置 DNS
+> 💡 **本仓库当前未使用自定义域名**，`CNAME` 文件已移除，站点地址为 `https://shinelixin.github.io/media-preprocess-toolkit/`。若日后在 Settings 里填了自定义域名，请务必填入**真实存在且已配好 DNS 的域名**——填错会让 `github.io` 访问被 301 重定向到无法解析的域名，站点反而打不开（排查见下方 FAQ）。
 
 > 由于构建使用相对路径 `--base=./`，无论走 github.io 子路径还是自有域名根路径，同一份产物都能正常加载资源，无需为此改构建配置。
 
