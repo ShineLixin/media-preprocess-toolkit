@@ -1,0 +1,78 @@
+name: Deploy to GitHub Pages
+
+# 纯前端离线产物构建（standalone）→ GitHub Pages
+#
+# 为什么要 MIAODA_BUILD_TARGET=standalone：
+#   本项目的常规构建（scripts/build.sh）产物依赖秒搭平台运行时——HTML 里的
+#   {{appName}} / {{appAvatar}} 占位符由 vefaas 运行时替换，并额外注入 slardar 埋点、
+#   viewContext 与 AppContainer 水印。GitHub Pages 上没有这层运行时，直接用常规产物会出现
+#   标题显示字面量 "{{appName}}"、favicon 指向平台占位符、外链脚本请求失败等问题。
+#   standalone 是平台官方的「脱离平台可访问」构建目标：跳过上述注入，并把 BrowserRouter
+#   换成 HashRouter（静态托管无需 404.html 回退，任意子路径可直接深链访问）。
+#
+# 为什么要 ASSETS_CDN_PATH：
+#   Pages 站点托管在子路径 /<repo>/ 下，Vite 的 base 需为 /media-preprocess-toolkit，
+#   否则 index.html 里引用的 /assets/*.js 会请求站点根目录而 404。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --include=optional 必需：Rolldown 原生 binding 走 optionalDependencies，
+      # 缺了会在构建期报 "Cannot find native binding"（npm/cli#4828）。
+      - name: 安装依赖
+        run: npm ci --include=optional
+
+      - name: 类型检查
+        run: npm run typecheck
+
+      - name: 构建 Pages 离线产物
+        env:
+          NODE_ENV: production
+          MIAODA_BUILD_TARGET: standalone
+          ASSETS_CDN_PATH: /media-preprocess-toolkit
+        run: npx vite build --outDir dist --emptyOutDir
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: 上传产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

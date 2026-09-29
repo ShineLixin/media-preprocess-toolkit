@@ -5,7 +5,8 @@
 - **标注辅助工具**：VOC / COCO / YOLO / LabelMe 四种格式双向批量互转、标注质检（漏标 / 框尺寸异常 / 未知类别）、预标注生成与可视化标注编辑
 - **多媒体批处理**：视频抽帧 + 感知哈希去重、图片批量增强、裁剪缩放与格式转换、畸变校正、OCR 固定版式识别
 
-> 📖 完整的功能说明、安装运行、本地与公网部署指南见 [README.md（部署与使用文档）.md](./README.md（部署与使用文档）.md)
+> 📖 完整的功能说明、安装运行、本地与公网部署指南见 [DEPLOYMENT.md](./DEPLOYMENT.md)
+> 🌐 在线演示（GitHub Pages 自动部署）：https://shinelixin.github.io/media-preprocess-toolkit/
 > 🛠 下方为本项目的技术规范（技术栈、目录结构、主题变量等约定）。
 
 ---

@@ -15,6 +15,7 @@
 - [使用指南](#使用指南)
 - [本地部署](#本地部署)
 - [部署为公网网站](#部署为公网网站)
+- [GitHub Pages 自动部署](#github-pages本仓库已配置自动部署)
 - [常见问题（FAQ）](#常见问题faq)
 - [版本记录](#版本记录)
 
@@ -101,12 +102,13 @@ npm install --include=optional
 npm run dev
 # 浏览器访问 http://localhost:5173
 
-# 3. 生产构建
+# 3. 生产构建（平台部署用）
 npm run build
-# 产物输出：dist/output/（部署用此目录）
+# 产物输出：dist/output/（平台部署上传此目录）
 
-# 4. 本地预览构建产物
-npm run preview
+# 4. 本地预览（直接预览 Vite 原始产物，不经过 scripts/build.sh 的平台目录拆解）
+npx vite build --outDir dist/client && npx vite preview --outDir dist/client
+# 浏览器访问 http://localhost:4173
 ```
 
 构建产物结构：
@@ -273,6 +275,58 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ---
 
+## GitHub Pages（本仓库已配置自动部署）
+
+本仓库 `main` 分支已配置 GitHub Actions 自动部署到 GitHub Pages，推送即上线：
+
+- 工作流：`.github/workflows/deploy-pages.yml`
+- 访问地址：<https://shinelixin.github.io/media-preprocess-toolkit/>
+- 触发方式：推送到 `main` 分支；或在仓库 Actions 页面手动 `Run workflow`
+
+### 为什么不能直接用 `npm run build` 的产物
+
+`npm run build`（`scripts/build.sh`）产出的是**妙搭平台部署产物**，依赖平台运行时：
+
+| 依赖项 | 说明 |
+|---|---|
+| `{{appName}}` / `{{appDescription}}` / `{{appAvatar}}` 占位符 | 由部署运行时（vefaas）调平台 API 拿应用信息后做 HBS 替换；脱离平台会原样显示 `{{appName}}` |
+| slardar 埋点 + viewContext | 注入 4 个平台外链脚本与 `{{userId}}` / `{{tenantId}}` 占位符 |
+| AppContainer 水印 | 非离线产物会挂载平台 Safety 徽标 / 品牌水印 |
+
+GitHub Pages 上没有这层运行时，因此工作流改用平台官方的**离线产物构建目标**（等价于 `miaoda app export-standalone`）：
+
+```bash
+NODE_ENV=production \
+MIAODA_BUILD_TARGET=standalone \
+ASSETS_CDN_PATH=/media-preprocess-toolkit \
+npx vite build --outDir dist --emptyOutDir
+```
+
+| 环境变量 | 作用 |
+|---|---|
+| `NODE_ENV=production` | 必须显式设置，preset 以它判断 dev/prod（未设置会按 dev 模式构建，产物不可用） |
+| `MIAODA_BUILD_TARGET=standalone` | 离线产物：跳过占位符注入 / slardar / viewContext / 老浏览器 polyfill / 水印；产物改为 iife 经典脚本；并把 `BrowserRouter` 自动替换为 `HashRouter` |
+| `ASSETS_CDN_PATH=/media-preprocess-toolkit` | 资源前缀 = 仓库子路径。Vite `base` 取此值，否则 `index.html` 引用的 `/assets/*.js` 会请求站点根目录而 404 |
+
+> **HashRouter 的收益**：路由地址形如 `https://shinelixin.github.io/media-preprocess-toolkit/#/annotation`，静态托管无需 404 回退配置，直接打开/刷新任意子路径都能正常渲染。
+
+### 首次部署前置条件
+
+仓库 **Settings → Pages → Build and deployment → Source** 需为 **GitHub Actions**（工作流中的 `actions/configure-pages` 已带 `enablement: true`，通常会自动开启；若 Actions 报权限错误，手动切换一次即可）。
+
+### 本地复现 Pages 构建
+
+```bash
+NODE_ENV=production MIAODA_BUILD_TARGET=standalone ASSETS_CDN_PATH=/media-preprocess-toolkit \
+  npx vite build --outDir dist --emptyOutDir
+npx vite preview --outDir dist
+# 访问 http://localhost:4173/media-preprocess-toolkit/
+```
+
+> 生产环境完整文档要求 Node.js ≥ 20.19（本机若为 Node 18 会报 `styleText` 不存在）；CI 使用 Node 22。
+
+---
+
 ## 常见问题（FAQ）
 
 | 问题 | 原因 | 解决 |
@@ -286,6 +340,9 @@ sudo nginx -t && sudo systemctl reload nginx
 | 版本快照丢失 / 保存失败 | localStorage 容量上限（5–10MB） | 版本管理只存元数据不含图片，正常不会超限；大量图片请分批处理 |
 | 大视频 / 大批量图片卡顿 | CPU 密集型操作（纯本地处理） | 分批处理，建议单批 ≤200 张图、视频 ≤500MB |
 | 构建警告 `chunks are larger than 500 kB` | 主包体积大（echarts / tesseract） | 正常提示，不影响运行；后续可做路由级代码分割优化 |
+| GitHub Pages 页面标题显示字面量 `{{appName}}` | 用了平台产物（`npm run build`）而非离线产物 | 用 `MIAODA_BUILD_TARGET=standalone` 构建（工作流已内置） |
+| GitHub Pages 打开后白屏、控制台 `/assets/*.js` 404 | 资源前缀不对（站点在 `/<repo>/` 子路径下） | 构建时设置 `ASSETS_CDN_PATH=/<repo>`，与仓库名一致 |
+| GitHub Pages 直接访问 `/#/annotation` 报 404 | 用 BrowserRouter 构建 | 用 standalone 构建（自动切 HashRouter）；自建 Server 则需配 SPA 回退 |
 
 ---
 
@@ -303,9 +360,12 @@ sudo nginx -t && sudo systemctl reload nginx
 ## 项目结构（简要）
 
 ```
-├── index.html                  # 入口 HTML
+├── index.html                  # 入口 HTML（页面标题 / favicon / description）
 ├── package.json                # 依赖声明
 ├── vite.config.ts              # Vite 配置
+├── DEPLOYMENT.md               # 部署与使用指南（本文档）
+├── .github/workflows/
+│   └── deploy-pages.yml        # GitHub Pages 自动部署（离线产物构建）
 ├── scripts/
 │   ├── dev.mjs                 # 开发启动脚本
 │   └── build.sh                # 构建脚本
