@@ -56,10 +56,11 @@ jobs:
           ASSETS_CDN_PATH: /media-preprocess-toolkit
         run: npx vite build --outDir dist --emptyOutDir
 
-      - name: 配置 Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
+      # 注：这里不挂 actions/configure-pages —— 本工作流不消费它输出的 base_url/base_path
+      # （资源前缀由 ASSETS_CDN_PATH 显式指定）。而它的 enablement: true 在 GITHUB_TOKEN 下
+      # 必然失败：action.yml 明确 "This option requires a token other than GITHUB_TOKEN"，
+      # 创建 Pages 站点需要 PAT 的 repo 权限或 GitHub App 的 administration:write。
+      # 因此 Pages 站点的启用改为一次性人工操作，见 DEPLOYMENT.md「首次部署前置条件」。
 
       - name: 上传产物
         uses: actions/upload-pages-artifact@v3

@@ -310,9 +310,13 @@ npx vite build --outDir dist --emptyOutDir
 
 > **HashRouter 的收益**：路由地址形如 `https://shinelixin.github.io/media-preprocess-toolkit/#/annotation`，静态托管无需 404 回退配置，直接打开/刷新任意子路径都能正常渲染。
 
-### 首次部署前置条件
+### 首次部署前置条件（必须做一次）
 
-仓库 **Settings → Pages → Build and deployment → Source** 需为 **GitHub Actions**（工作流中的 `actions/configure-pages` 已带 `enablement: true`，通常会自动开启；若 Actions 报权限错误，手动切换一次即可）。
+**仓库 Settings → Pages → Build and deployment → Source 选择「GitHub Actions」**（一次即可，之后长期生效）。
+
+> ⚠️ 这一步无法由工作流自动完成：创建 Pages 站点需要 PAT 的 `repo` 权限或 GitHub App 的 `administration:write` 权限，默认的 `GITHUB_TOKEN` 无法调用该 API（`actions/configure-pages` 的 `enablement: true` 在 action.yml 中亦明确写明 *"requires a token other than GITHUB_TOKEN"*）。因此工作流已刻意不挂该步骤。
+
+未启用时的现象：工作流在 **deploy** 作业失败（`Deployment failed` / `Pages site not found`）；启用后重新运行工作流即可，例如在 Actions 页面点 **Re-run all jobs**，或再推送一次提交。
 
 ### 本地复现 Pages 构建
 
@@ -343,6 +347,8 @@ npx vite preview --outDir dist
 | GitHub Pages 页面标题显示字面量 `{{appName}}` | 用了平台产物（`npm run build`）而非离线产物 | 用 `MIAODA_BUILD_TARGET=standalone` 构建（工作流已内置） |
 | GitHub Pages 打开后白屏、控制台 `/assets/*.js` 404 | 资源前缀不对（站点在 `/<repo>/` 子路径下） | 构建时设置 `ASSETS_CDN_PATH=/<repo>`，与仓库名一致 |
 | GitHub Pages 直接访问 `/#/annotation` 报 404 | 用 BrowserRouter 构建 | 用 standalone 构建（自动切 HashRouter）；自建 Server 则需配 SPA 回退 |
+| 首次工作流失败在「配置 Pages」/ `Create Pages site failed. Resource not accessible by integration` | `GITHUB_TOKEN` 无权创建 Pages 站点 | Settings → Pages → Source 选「GitHub Actions」（工作流已移除该步骤，不再是失败点） |
+| 工作流 deploy 作业失败（`Deployment failed` / Pages site not found） | 仓库尚未启用 Pages | Settings → Pages → Source 选「GitHub Actions」后 **Re-run all jobs** |
 
 ---
 
