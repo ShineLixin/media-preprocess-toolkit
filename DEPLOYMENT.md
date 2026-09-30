@@ -317,6 +317,8 @@ npx vite build --outDir dist --emptyOutDir --base=./
 
 未启用时的现象：工作流在 **deploy** 作业失败（`Deployment failed` / `Pages site not found`）；启用后重新运行工作流即可，例如在 Actions 页面点 **Re-run all jobs**，或再推送一次提交。
 
+> ⚠️ **来源若被切回「Deploy from a branch」会怎样**：每次 push，GitHub 内置的 `pages build and deployment`（Jekyll 构建 main 分支根目录）会与本工作流的 artifact 部署**互相覆盖、以「后完成者」生效**——表现为线上 `index.html` 退回源码版（引用 `/src/index.tsx` → 404，`#root` 为空、页面白屏），且**是否白屏随推送时序随机**。修复方法：把 Source 重新切回「GitHub Actions」。工作流 deploy 作业已内置「竞态护栏」步骤，会先等内置分支构建进入终态再部署本产物，作为切换前的兜底（切换为 GitHub Actions 后该步骤约 30 秒自动放行，可删除）。
+
 ### 自定义域名（可选，非必须）
 
 默认访问地址是 `https://shinelixin.github.io/media-preprocess-toolkit/`，**无需任何额外配置**。若要绑定自有域名：
@@ -365,6 +367,7 @@ npx vite preview --outDir dist
 | GitHub Pages 直接访问 `/#/annotation` 报 404 | 用 BrowserRouter 构建 | 用 standalone 构建（自动切 HashRouter）；自建 Server 则需配 SPA 回退 |
 | 首次工作流失败在「配置 Pages」/ `Create Pages site failed. Resource not accessible by integration` | `GITHUB_TOKEN` 无权创建 Pages 站点 | Settings → Pages → Source 选「GitHub Actions」（工作流已移除该步骤，不再是失败点） |
 | 工作流 deploy 作业失败（`Deployment failed` / Pages site not found） | 仓库尚未启用 Pages | Settings → Pages → Source 选「GitHub Actions」后 **Re-run all jobs** |
+| 线上首页是源码版：控制台 `/src/index.tsx` 404、`#root` 无内容、页面白屏，且有时正常有时白屏 | Pages 发布来源为「Deploy from a branch」，内置 Jekyll 分支构建与 Actions artifact 部署竞态、后完成者生效 | Settings → Pages → Build and deployment → Source 切「GitHub Actions」；工作流已内置竞态护栏兜底（等内置部署终态后再部署产物） |
 
 ---
 
