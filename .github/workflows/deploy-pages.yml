@@ -75,6 +75,53 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # 竞态护栏：若仓库 Settings → Pages 的发布来源是「Deploy from a branch」，每次 push 时
+      # GitHub 还会额外跑内置的 pages build and deployment（Jekyll 构建 main 分支根目录），
+      # 它与本工作流的 artifact 部署互相覆盖、以「后完成者」生效——曾导致线上被源码版
+      # index.html 覆盖（/src/index.tsx 404、React 不挂载、站点白屏）。
+      # 因此这里先等内置部署进入终态，再部署本工作流产物，保证产物始终最后生效。
+      # 永久修复：在 Settings → Pages → Build and deployment → Source 切换为 "GitHub Actions"，
+      # 内置分支构建不再触发，本步骤最多等待约 30 秒即放行（届时可删除本步骤）。
+      - name: 等待内置分支构建部署完成（竞态护栏）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          PUSH_TS=$(jq -r '.head_commit.timestamp // empty' "$GITHUB_EVENT_PATH" 2>/dev/null || true)
+          if [ -z "$PUSH_TS" ]; then
+            echo "非 push 事件（如手动触发），无需等待内置分支构建"
+            exit 0
+          fi
+          PUSH=$(date -u -d "$PUSH_TS" +%s)
+          api() {
+            curl -s --max-time 15 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$1"
+          }
+          # 内置部署记录通常在 push 后约 25s 创建，而本步骤在构建完成后才运行，
+          # 正常情况下首次查询即可发现；最多再等 30s 兜底。
+          TARGET=""
+          for _ in 1 2 3 4 5 6; do
+            TARGET=$( (api "https://api.github.com/repos/$REPO/deployments?environment=github-pages&per_page=10" || echo '[]') \
+              | jq -r --argjson p "$PUSH" '[.[] | select((.created_at | fromdateiso8601) > $p)][0].id // empty' 2>/dev/null || true)
+            if [ -n "$TARGET" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$TARGET" ]; then
+            echo "未发现本次 push 触发的内置 Pages 部署（发布来源应已是 GitHub Actions），直接部署"
+            exit 0
+          fi
+          echo "发现内置分支构建 deployment id=$TARGET，等待其进入终态…"
+          for _ in $(seq 1 24); do
+            STATE=$( (api "https://api.github.com/repos/$REPO/deployments/$TARGET/statuses?per_page=1" || echo '[]') \
+              | jq -r '.[0].state // "unknown"' 2>/dev/null || true)
+            echo "  内置部署 state=${STATE:-unknown}"
+            case "${STATE:-}" in
+              success|failure|error|inactive) break ;;
+            esac
+            sleep 10
+          done
+          echo "内置部署已结束，开始部署本工作流产物"
+
       - name: 部署到 GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
