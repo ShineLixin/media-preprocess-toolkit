@@ -79,10 +79,13 @@ jobs:
       # GitHub 还会额外跑内置的 pages build and deployment（Jekyll 构建 main 分支根目录），
       # 它与本工作流的 artifact 部署互相覆盖、以「后完成者」生效——曾导致线上被源码版
       # index.html 覆盖（/src/index.tsx 404、React 不挂载、站点白屏）。
-      # 因此这里先等内置部署进入终态，再部署本工作流产物，保证产物始终最后生效。
+      # 因此这里先等内置分支构建运行完成，再部署本工作流产物，保证产物始终最后生效。
+      # 注意：不能用 deployments API 找等待对象——本 deploy 作业启动时 GitHub 也会为它创建
+      # 一条 github-pages environment deployment，等「最新 deployment」等于等自己（死锁至超时）；
+      # 改为按运行名 pages build and deployment 查 Actions 运行，天然排除本工作流。
       # 永久修复：在 Settings → Pages → Build and deployment → Source 切换为 "GitHub Actions"，
       # 内置分支构建不再触发，本步骤最多等待约 30 秒即放行（届时可删除本步骤）。
-      - name: 等待内置分支构建部署完成（竞态护栏）
+      - name: 等待内置分支构建完成（竞态护栏）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -93,34 +96,33 @@ jobs:
             echo "非 push 事件（如手动触发），无需等待内置分支构建"
             exit 0
           fi
-          PUSH=$(date -u -d "$PUSH_TS" +%s)
+          PUSH_ISO=$(date -u -d "$PUSH_TS" +%Y-%m-%dT%H:%M:%SZ)
           api() {
             curl -s --max-time 15 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$1"
           }
-          # 内置部署记录通常在 push 后约 25s 创建，而本步骤在构建完成后才运行，
-          # 正常情况下首次查询即可发现；最多再等 30s 兜底。
-          TARGET=""
+          # 查找本次 push 触发的内置分支构建运行（按运行名过滤；其创建时间与 push 同秒，
+          # 而本步骤在构建完成后才运行，通常首查即得），最多兜底等 30s。
+          RUN_ID=""
           for _ in 1 2 3 4 5 6; do
-            TARGET=$( (api "https://api.github.com/repos/$REPO/deployments?environment=github-pages&per_page=10" || echo '[]') \
-              | jq -r --argjson p "$PUSH" '[.[] | select((.created_at | fromdateiso8601) > $p)][0].id // empty' 2>/dev/null || true)
-            if [ -n "$TARGET" ]; then break; fi
+            RUN_ID=$( (api "https://api.github.com/repos/$REPO/actions/runs?per_page=30" || echo '{}') \
+              | jq -r --arg n "pages build and deployment" --arg t "$PUSH_ISO" \
+                '[.workflow_runs[]? | select(.name == $n and .created_at >= $t)][0].id // empty' 2>/dev/null || true)
+            if [ -n "$RUN_ID" ]; then break; fi
             sleep 5
           done
-          if [ -z "$TARGET" ]; then
-            echo "未发现本次 push 触发的内置 Pages 部署（发布来源应已是 GitHub Actions），直接部署"
+          if [ -z "$RUN_ID" ]; then
+            echo "未发现本次 push 触发的内置分支构建运行（发布来源应已是 GitHub Actions），直接部署"
             exit 0
           fi
-          echo "发现内置分支构建 deployment id=$TARGET，等待其进入终态…"
+          echo "内置分支构建 run id=$RUN_ID，等待其完成…"
           for _ in $(seq 1 24); do
-            STATE=$( (api "https://api.github.com/repos/$REPO/deployments/$TARGET/statuses?per_page=1" || echo '[]') \
-              | jq -r '.[0].state // "unknown"' 2>/dev/null || true)
-            echo "  内置部署 state=${STATE:-unknown}"
-            case "${STATE:-}" in
-              success|failure|error|inactive) break ;;
-            esac
+            STATUS=$( (api "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID" || echo '{}') \
+              | jq -r '.status // "unknown"' 2>/dev/null || true)
+            echo "  内置构建 status=${STATUS:-unknown}"
+            if [ "${STATUS:-}" = "completed" ]; then break; fi
             sleep 10
           done
-          echo "内置部署已结束，开始部署本工作流产物"
+          echo "内置分支构建已结束，开始部署本工作流产物"
 
       - name: 部署到 GitHub Pages
         id: deployment
