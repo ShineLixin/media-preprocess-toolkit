@@ -33,7 +33,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { logger } from '@lark-apaas/client-toolkit-lite';
 import Tesseract from 'tesseract.js';
@@ -43,6 +43,7 @@ import { getImageSize, copyToClipboard, downloadJson } from '@/utils/file/fileUt
 import { Image } from '@/components/ui/image';
 
 export default function OCRTab() {
+  const [mode, setMode] = useState<'single' | 'batch'>('single');
   const [images, setImages] = useState<IImageItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isRecognizing, setIsRecognizing] = useState(false);
@@ -534,7 +535,7 @@ export default function OCRTab() {
     <div className="space-y-4 h-[calc(100vh-220px)] min-h-[500px] flex flex-col">
       {/* 顶部模式切换 + 操作栏 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <Tabs defaultValue="single" className="w-auto">
+        <Tabs value={mode} onValueChange={(v) => setMode(v as 'single' | 'batch')} className="w-auto">
           <TabsList>
             <TabsTrigger value="single" className="gap-1.5">
               <FileText className="size-3.5" />
@@ -545,9 +546,6 @@ export default function OCRTab() {
               批量识别
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="single" className="hidden" />
-          <TabsContent value="batch" className="hidden" />
         </Tabs>
 
         <div className="flex items-center gap-2">
@@ -572,7 +570,8 @@ export default function OCRTab() {
         </div>
       </div>
 
-      {/* 内容区：单图模式 */}
+      {/* 内容区：单图模式（与批量模式互斥，二选一渲染） */}
+      {mode === 'single' && (
       <SingleModeView
         images={images}
         selectedId={selectedId}
@@ -612,8 +611,10 @@ export default function OCRTab() {
         editingTableCellValue={editingTableCellValue}
         setEditingTableCellValue={setEditingTableCellValue}
       />
+      )}
 
-      {/* 内容区：批量模式 - 暂用条件渲染 */}
+      {/* 内容区：批量模式（与单图模式互斥，二选一渲染） */}
+      {mode === 'batch' && (
       <BatchModeView
         images={images}
         fields={fields}
@@ -637,6 +638,7 @@ export default function OCRTab() {
         setEditValue={setEditValue}
         onCellEdit={handleCellEdit}
       />
+      )}
     </div>
   );
 }
